@@ -1,6 +1,7 @@
 """Defines the Source, SourceLocation and SourceRange classes."""
 from collections import namedtuple
 from enum import Enum, auto
+import bisect
 
 RangePair = namedtuple('RangePair', 'begin end')
 LineCol = namedtuple('LineCol', 'line col')
@@ -16,21 +17,41 @@ class LineEndingDetectionFailed(Exception):
     pass
 
 class Source:
+    """Represents an single logical unit of source code, e.g. the contents of a source file.
+    """
+
     def __init__(self, content, *, name=None, encoding='utf-8', line_ending=LineEnding.LF):
-        """Initialises the Source object with `content`, which is an iterable whose elements
-        are strings, which are assumed to refer to individual characters in a source file.
-        Content may be empty. The keyword only parameter `name` specifies a name for this Source
-        object, which is generally the filename or something like '<stdin>'. The keyword only
-        parameter `encoding` specifies the name of the text encoding that should be used to decode
-        `content` if it has type `bytes`. If `content` does not have type `bytes`, then this
-        parameter has no effect and the encoding is assumed to be UTF-8.
-        The keyworld only parameter `line_ending` designates the
-        assumed line-ending sequence (e.g. LF or CRLF). If this parameter is equal to
-        `LineEnding.DETECT`, then the Source will attempt to determine the appropriate line ending
-        by examining the presence of the first newline sequence. If no newlines are present and
-        the `line_ending` parameter is equal to `LineEnding.DETECT`, then a
-        `LineEndingDetectionFailed` exception will be raised.
+        """Initialise a Source object with contents and optional name, encoding and line endings.
+
+        Args:
+            content: The textual contents of the Source object. May be `str` or `bytes`.
+
+            name (optional): The logical name of the Source object.
+                Typically, this should be the filename or path of the Source file if it
+                was read from a file, or something like "<stdin>" if the Source was read from
+                standard input.
+
+            encoding (optional): The encoding used to decode `content` if it has type `bytes`.
+                If `encoding` has type `bytes`, then this is the encoding that will be used to
+                decode it into a `str` object. The value of this parameter must be a valid
+                Python encoding name. If the type of `content` is not `bytes`, then this parameter
+                has no effect.
+
+            line_ending (optional): The type of line endings that are present in `content`.
+                The kind of line endings determine how the Source object interprets lines
+                in the source content, and affects the line and column numbers of any
+                `SourceLocation` or `SourceRange` derived therefrom.
+                If the value of this parameter is `LineEnding.DETECT`, then the line endings
+                of the file will be detected by examining the first newline present in the file.
+                If the value of this parameter is `LineEnding.DETECT` and no newlines are present
+                in the file, then a `LineEndingDetectionFailed` exception will be raised.
+
+        Raises:
+            LineEndingDetectionFailed: If the type of `content` is `bytes` and `line_ending` is
+                equal to `LineEnding.DETECT` and the line ending detection algorithm fails to
+                determine a line ending kind for the source content.
         """
+
         self._name = name
 
         if isinstance(content, bytes):
@@ -44,6 +65,7 @@ class Source:
                 raise LineEndingDetectionFailed('Failed to detect line endings')
 
         self._line_ending = line_ending
+        self._offset_line_col_map = OffsetLineColMap(self)
 
     def __getitem__(self, index):
         """Performs indexing in the Source object. The exact nature of the indexing depends
@@ -119,6 +141,11 @@ class SourceLocation:
         self._offset = offset
 
     @property
+    def char(self):
+        """Returns the character designated by this location."""
+        return self._source[self._offset]
+
+    @property
     def offset(self):
         """Returns the SourceLocation's offset within the parent Source object."""
         return self._offset
@@ -128,7 +155,7 @@ class SourceLocation:
         """Returns a LineCol object that designates the line and column number of this
         SourceLocation.
         """
-        pass
+        return self._source._offset_line_col_map.lookup_line_col(self._offset)
 
     @property
     def is_end(self):
@@ -152,6 +179,11 @@ class SourceRange:
         return self._end - self._begin
 
     @property
+    def chars(self):
+        """Returns the string of characters designated by this range."""
+        return self._source[self._begin:self._end]
+
+    @property
     def offsets(self):
         """Returns RangePair containing the begin and end offsets of this SourceRange within the
         parent Source object.
@@ -165,5 +197,91 @@ class SourceRange:
         """
         return RangePair(
             SourceLocation(self._source, self._begin),
-            SourceLocation(self._source, self._end)
-        )
+            SourceLocation(self._source, self._end))
+
+class OffsetLineColMap:
+    def __init__(self, source):
+        self._source = source
+        self._line_ending = source.line_ending.value
+        self._forward_map = self._create_forward_map()
+        self._backward_list = self._create_backward_list(self._forward_map)
+        self._eof_newline = self._has_eof_newline()
+
+    def _has_eof_newline(self):
+        # Return True if the parent Source object has a newline at the end of the file.
+
+        line_ending_len = len(self._line_ending)
+        if len(self._source.content) >= line_ending_len:
+            return self._source.content[-line_ending_len:] == self._line_ending
+
+        return False
+
+    def _create_forward_map(self):
+        # Creates and returns a dictionary whose keys are line numbers and whose offsets
+        # are the offset in which that line begins in the parent Source object.
+
+        # The first line always begins at offset 0 (even if the source is empty)
+        line_count = 1
+        result = {line_count: 0}
+
+        next_line = self._find_next_line()
+        while next_line is not None:
+            line_count += 1
+            result[line_count] = next_line
+            next_line = self._find_next_line(next_line)
+
+        return result
+
+    def _create_backward_list(self, forward_map):
+        # Create and return a dictionary that is the inverse of the given forward map,
+        # see `_create_forward_map`.
+
+        return [(offset, line) for line,offset in forward_map.items()]
+
+    def _find_next_line(self, start_offset=0):
+        # Search, from `start_offset`, for a newline in the parent Source.
+        # If a newline is found, return the offset of the first character of the line
+        # that immediately follows. If a newline is not found, or the newline is at the end
+        # of the parent Source object, then return None.
+
+        begin = self._source.content.find(self._line_ending, start_offset)
+        end = begin + len(self._line_ending)
+
+        if begin != -1 and end < len(self._source):
+            return end
+        else:
+            return None
+
+    def _is_valid_line_col(self, line_col):
+        # Returns True if the given LineCol object is valid (refers to a valid line and column
+        # in the parent Source object).
+
+        if line_col.line not in self._forward_map:
+            return False
+
+        if line_col.line + 1 in self._forward_map:
+            end_offset = self._forward_map[line_col.line + 1] - len(self._line_ending)
+        else:
+            end_offset = len(self._source) - len(self._line_ending) if self._has_eof_newline else 0
+
+        return 1 <= line_col.col <= end_offset - self._forward_map[line_col.line]
+
+    def lookup_offset(self, line_col):
+        # Return the offset of the character located by the `LineCol` object given
+        # as `line_col` in the parent Source object.
+
+        if not self._is_valid_line_col(line_col):
+            raise ValueError(f'{line_col} is not a valid line and/or column')
+
+        return self._forward_map[line_col.line] + line_col.col - 1
+
+    def lookup_line_col(self, offset):
+        # Return a `LineCol` object that designates the character at `offset` in the parent
+        # Source object.
+
+        if not (0 <= offset < len(self._source)):
+            raise ValueError(f'{offset} is not a valid offset')
+
+        offsets = [o for o,_ in self._backward_list]
+        line_offset, line_num = self._backward_list[bisect.bisect_right(offsets, offset) - 1]
+        return LineCol(line_num, offset - line_offset + 1)
