@@ -53,11 +53,7 @@ class Source:
         """
 
         self._name = name
-
-        if isinstance(content, bytes):
-            self._content = content.decode(encoding)
-        else:
-            self._content = content
+        self._content = content.decode(encoding) if isinstance(content, bytes) else content
 
         if line_ending == LineEnding.DETECT:
             line_ending = self._detect_line_ending()
@@ -103,6 +99,11 @@ class Source:
     def line_ending(self):
         """Returns the line endings type of this Source object."""
         return self._line_ending
+
+    @property
+    def range(self):
+        """Returns a SourceRange consisting of the entirety of the Source content."""
+        return SourceRange(self, 0, len(self))
 
     def _detect_line_ending(self):
         if '\r\n' in self._content:
@@ -177,6 +178,10 @@ class SourceRange:
 
     def __len__(self):
         return self._end - self._begin
+
+    def __iter__(self):
+        for offset in range(len(self)):
+            yield SourceLocation(self._source, offset)
 
     @property
     def chars(self):
