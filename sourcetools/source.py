@@ -16,13 +16,27 @@ class LineEndingDetectionFailed(Exception):
     pass
 
 class Source:
-    def __init__(self, content, *, name=None, line_ending=LineEnding.LF):
+    def __init__(self, content, *, name=None, encoding='utf-8', line_ending=LineEnding.LF):
         """Initialises the Source object with `content`, which is an iterable whose elements
         are strings, which are assumed to refer to individual characters in a source file.
-        Content may be empty.
+        Content may be empty. The keyword only parameter `name` specifies a name for this Source
+        object, which is generally the filename or something like '<stdin>'. The keyword only
+        parameter `encoding` specifies the name of the text encoding that should be used to decode
+        `content` if it has type `bytes`. If `content` does not have type `bytes`, then this
+        parameter has no effect and the encoding is assumed to be UTF-8.
+        The keyworld only parameter `line_ending` designates the
+        assumed line-ending sequence (e.g. LF or CRLF). If this parameter is equal to
+        `LineEnding.DETECT`, then the Source will attempt to determine the appropriate line ending
+        by examining the presence of the first newline sequence. If no newlines are present and
+        the `line_ending` parameter is equal to `LineEnding.DETECT`, then a
+        `LineEndingDetectionFailed` exception will be raised.
         """
-        self._content = content
         self._name = name
+
+        if isinstance(content, bytes):
+            self._content = content.decode(encoding)
+        else:
+            self._content = content
 
         if line_ending == LineEnding.DETECT:
             line_ending = self._detect_line_ending()
@@ -57,6 +71,11 @@ class Source:
     def name(self):
         """Returns the name of this Source object."""
         return self._name
+
+    @property
+    def content(self):
+        """Returns the Source's content."""
+        return self._content
 
     @property
     def line_ending(self):
