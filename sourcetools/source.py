@@ -195,11 +195,17 @@ class SourceRange:
         self._end = end
 
     def __len__(self):
+        """Return the number of locations in this range."""
         return self._end - self._begin
 
     def __iter__(self):
-        for offset in range(len(self)):
+        """Return an iterator that yields each location in this range."""
+        for offset in range(self._begin, self._end):
             yield SourceLocation(self._source, offset)
+
+    def lines(self):
+        """Return an iterator that yields each logical line of this range."""
+        pass
 
     @property
     def chars(self):
