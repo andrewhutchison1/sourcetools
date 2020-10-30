@@ -61,7 +61,7 @@ class Source:
                 raise LineEndingDetectionFailed('Failed to detect line endings')
 
         self._line_ending = line_ending
-        self._offset_line_col_map = OffsetLineColMap(self)
+        self._offset_line_col_map = _OffsetLineColMap(self)
 
     def __getitem__(self, index):
         """Performs indexing in the Source object. The exact nature of the indexing depends
@@ -204,7 +204,7 @@ class SourceRange:
             SourceLocation(self._source, self._begin),
             SourceLocation(self._source, self._end))
 
-class OffsetLineColMap:
+class _OffsetLineColMap:
     def __init__(self, source):
         self._source = source
         self._line_ending = source.line_ending.value
