@@ -187,7 +187,7 @@ class SourceRange:
         integer offsets which designate, respectively, the range of source characters
         [begin, end) in the Source object.
         """
-        if not 0 <= begin < end <= len(source):
+        if not 0 <= begin <= end <= len(source):
             raise RangeError(f'({begin}, {end}) is not a valid SourceRange')
 
         self._source = source
@@ -204,8 +204,17 @@ class SourceRange:
             yield SourceLocation(self._source, offset)
 
     def lines(self):
-        """Return an iterator that yields each logical line of this range."""
-        pass
+        """Return an iterator that yields each logical line of this range as a SourceRange."""
+
+        begin = None
+        for location in self:
+            if begin is None:
+                begin = location.offset
+
+            if location.is_newline:
+                yield SourceRange(self._source, begin, location.offset)
+                begin = None
+                continue
 
     @property
     def chars(self):
@@ -227,6 +236,11 @@ class SourceRange:
         return RangePair(
             SourceLocation(self._source, self._begin),
             SourceLocation(self._source, self._end))
+
+    @property
+    def is_empty(self):
+        """Return True if this range is empty."""
+        return len(self) == 0
 
 class _OffsetLineColMap:
     def __init__(self, source):
