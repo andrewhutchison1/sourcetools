@@ -218,6 +218,11 @@ class SourceRange:
         for offset in range(self._begin, self._end):
             yield SourceLocation(self._source, offset)
 
+    def __contains__(self, location):
+        """Return True if the given SourceLocation is contained in this range."""
+
+        return self._begin <= location.offset < self._end
+
     def lines(self):
         """Return an iterator that yields each logical line of this range as a SourceRange."""
 
