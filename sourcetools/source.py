@@ -1,4 +1,5 @@
 """Defines the Source, SourceLocation and SourceRange classes."""
+
 from collections import namedtuple
 from enum import Enum, auto
 import bisect
@@ -71,6 +72,7 @@ class Source:
         """Performs indexing in the Source object. The exact nature of the indexing depends
         on the type of `index`.
         """
+
         if isinstance(index, int):
             return self._get_offset(index)
         elif isinstance(index, SourceLocation):
@@ -82,31 +84,35 @@ class Source:
 
         name = type(index).__name__
         raise TypeError(
-            f'Source index must be int, SourceLocation, slice or SourceRange, not {name}'
-        )
+            f'Source index must be int, SourceLocation, slice or SourceRange, not {name}')
 
     def __len__(self):
         """Returns the length of the Source's content iterable."""
+
         return len(self._content)
 
     @property
     def name(self):
         """Returns the name of this Source object."""
+
         return self._name
 
     @property
     def content(self):
         """Returns the Source's content."""
+
         return self._content
 
     @property
     def line_ending(self):
         """Returns the line endings type of this Source object."""
+
         return self._line_ending
 
     @property
     def range(self):
         """Returns a SourceRange consisting of the entirety of the Source content."""
+
         return SourceRange(self, 0, len(self))
 
     def _detect_line_ending(self):
@@ -148,6 +154,7 @@ class SourceLocation:
         beginning (0) of the Source's content that uniquely identifies a single source
         character.
         """
+
         if not 0 <= offset <= len(source):
             raise RangeError(f'Offset {offset} out of range')
 
@@ -157,11 +164,13 @@ class SourceLocation:
     @property
     def char(self):
         """Returns the character designated by this location."""
+
         return self._source[self._offset]
 
     @property
     def offset(self):
         """Returns the SourceLocation's offset within the parent Source object."""
+
         return self._offset
 
     @property
@@ -169,16 +178,19 @@ class SourceLocation:
         """Returns a LineCol object that designates the line and column number of this
         SourceLocation.
         """
+
         return self._source._offset_line_col_map.lookup_line_col(self._offset)
 
     @property
     def is_newline(self):
         """Return True if the current location refers to a newline character."""
+
         return self.char == LineEnding.LF.value
 
     @property
     def is_end(self):
         """Returns True if this SourceLocation refers to the end of parent Source object."""
+
         return self._offset == len(self._source)
 
 class SourceRange:
@@ -187,6 +199,7 @@ class SourceRange:
         integer offsets which designate, respectively, the range of source characters
         [begin, end) in the Source object.
         """
+
         if not 0 <= begin <= end <= len(source):
             raise RangeError(f'({begin}, {end}) is not a valid SourceRange')
 
@@ -196,10 +209,12 @@ class SourceRange:
 
     def __len__(self):
         """Return the number of locations in this range."""
+
         return self._end - self._begin
 
     def __iter__(self):
         """Return an iterator that yields each location in this range."""
+
         for offset in range(self._begin, self._end):
             yield SourceLocation(self._source, offset)
 
@@ -218,6 +233,7 @@ class SourceRange:
     @property
     def chars(self):
         """Returns the string of characters designated by this range."""
+
         return self._source[self._begin:self._end]
 
     @property
@@ -225,6 +241,7 @@ class SourceRange:
         """Returns RangePair containing the begin and end offsets of this SourceRange within the
         parent Source object.
         """
+
         return RangePair(self._begin, self._end)
 
     @property
@@ -232,6 +249,7 @@ class SourceRange:
         """Returns a RangePair containing the begin and end locations of the SourceRange within the
         parent Source object, returning them as SourceLocation objects.
         """
+
         return RangePair(
             SourceLocation(self._source, self._begin),
             SourceLocation(self._source, self._end))
@@ -239,6 +257,7 @@ class SourceRange:
     @property
     def is_empty(self):
         """Return True if this range is empty."""
+
         return len(self) == 0
 
 class _OffsetLineColMap:
