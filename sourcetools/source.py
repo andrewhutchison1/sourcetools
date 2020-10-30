@@ -214,7 +214,6 @@ class SourceRange:
             if location.is_newline:
                 yield SourceRange(self._source, begin, location.offset)
                 begin = None
-                continue
 
     @property
     def chars(self):
