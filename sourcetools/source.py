@@ -172,6 +172,11 @@ class SourceLocation:
         return self._source._offset_line_col_map.lookup_line_col(self._offset)
 
     @property
+    def is_newline(self):
+        """Return True if the current location refers to a newline character."""
+        return self.char == LineEnding.LF.value
+
+    @property
     def is_end(self):
         """Returns True if this SourceLocation refers to the end of parent Source object."""
         return self._offset == len(self._source)
