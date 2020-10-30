@@ -55,10 +55,14 @@ class Source:
         self._name = name
         self._content = content.decode(encoding) if isinstance(content, bytes) else content
 
+        # Detect the content's line endings if necessary
         if line_ending == LineEnding.DETECT:
             line_ending = self._detect_line_ending()
             if line_ending is None:
                 raise LineEndingDetectionFailed('Failed to detect line endings')
+
+        # Normalise line endings
+        self._content = self._normalise_line_endings(self._content, line_ending)
 
         self._line_ending = line_ending
         self._offset_line_col_map = _OffsetLineColMap(self)
@@ -112,6 +116,15 @@ class Source:
             return LineEnding.LF
         else:
             return None
+
+    def _normalise_line_endings(self, content, line_ending):
+        # Normalise all line endings in `content` to LineEnding.LF and return the normalised
+        # content, assuming that the current line endings are given by `line_ending`.
+        # If `line_ending` is LineEnding.LF, then nothing is done.
+        if line_ending == LineEnding.LF:
+            return content
+
+        return content.replace(line_ending.value, LineEnding.LF.value)
 
     def _get_offset(self, offset):
         return self._content[offset]
@@ -207,7 +220,6 @@ class SourceRange:
 class _OffsetLineColMap:
     def __init__(self, source):
         self._source = source
-        self._line_ending = source.line_ending.value
         self._forward_map = self._create_forward_map()
         self._backward_list = self._create_backward_list(self._forward_map)
         self._eof_newline = self._has_eof_newline()
@@ -215,9 +227,8 @@ class _OffsetLineColMap:
     def _has_eof_newline(self):
         # Return True if the parent Source object has a newline at the end of the file.
 
-        line_ending_len = len(self._line_ending)
-        if len(self._source.content) >= line_ending_len:
-            return self._source.content[-line_ending_len:] == self._line_ending
+        if len(self._source.content) > 0:
+            return self._source.content[-1] == LineEnding.LF.value
 
         return False
 
@@ -249,13 +260,10 @@ class _OffsetLineColMap:
         # that immediately follows. If a newline is not found, or the newline is at the end
         # of the parent Source object, then return None.
 
-        begin = self._source.content.find(self._line_ending, start_offset)
-        end = begin + len(self._line_ending)
+        begin = self._source.content.find(LineEnding.LF.value, start_offset)
+        end = begin + 1
 
-        if begin != -1 and end < len(self._source):
-            return end
-        else:
-            return None
+        return end if begin != -1 and end < len(self._source) else None
 
     def _is_valid_line_col(self, line_col):
         # Returns True if the given LineCol object is valid (refers to a valid line and column
@@ -265,9 +273,9 @@ class _OffsetLineColMap:
             return False
 
         if line_col.line + 1 in self._forward_map:
-            end_offset = self._forward_map[line_col.line + 1] - len(self._line_ending)
+            end_offset = self._forward_map[line_col.line + 1] - 1
         else:
-            end_offset = len(self._source) - len(self._line_ending) if self._has_eof_newline else 0
+            end_offset = len(self._source) - 1 if self._has_eof_newline else 0
 
         return 1 <= line_col.col <= end_offset - self._forward_map[line_col.line]
 
