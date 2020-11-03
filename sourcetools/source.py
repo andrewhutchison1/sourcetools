@@ -75,11 +75,11 @@ class Source:
 
         if isinstance(index, int):
             return self._get_offset(index)
-        elif isinstance(index, SourceLocation):
+        if isinstance(index, SourceLocation):
             return self._get_pos(index)
-        elif isinstance(index, slice):
+        if isinstance(index, slice):
             return self._get_slice(index)
-        elif isinstance(index, SourceRange):
+        if isinstance(index, SourceRange):
             return self._get_range(index)
 
         name = type(index).__name__
@@ -109,7 +109,6 @@ class Source:
 
         return self._line_ending
 
-    @property
     def range(self):
         """Returns a SourceRange consisting of the entirety of the Source content."""
 
@@ -340,7 +339,7 @@ class _OffsetLineColMap:
         # Return a `LineCol` object that designates the character at `offset` in the parent
         # Source object.
 
-        if not (0 <= offset < len(self._source)):
+        if not 0 <= offset < len(self._source):
             raise ValueError(f'{offset} is not a valid offset')
 
         offsets = [o for o,_ in self._backward_list]
