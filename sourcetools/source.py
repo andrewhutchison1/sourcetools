@@ -141,7 +141,7 @@ class SourceLocation:
 
         return self._source is lhs._source and self._offset == lhs._offset
 
-    def __neq__(self, lhs):
+    def __ne__(self, lhs):
         """Compare this SourceLocation with another for inequality."""
 
         return not self == lhs
