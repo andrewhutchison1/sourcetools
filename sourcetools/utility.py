@@ -12,10 +12,11 @@ class LineEnding(Enum):
 def detect_line_endings(content):
     if '\r\n' in content:
         return LineEnding.CRLF
-    elif '\n' in content:
+
+    if '\n' in content:
         return LineEnding.LF
-    else:
-        return None
+
+    return None
 
 def normalise_line_endings(content, current, new=LineEnding.LF):
     if current == new:
