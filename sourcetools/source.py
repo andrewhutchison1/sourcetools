@@ -4,15 +4,10 @@ from collections import namedtuple
 from enum import Enum, auto
 import bisect
 
+from utility import LineEnding, detect_line_endings, normalise_line_endings
+
 RangePair = namedtuple('RangePair', 'begin end')
 LineCol = namedtuple('LineCol', 'line col')
-
-class LineEnding(Enum):
-    DETECT = auto()
-    LF = '\n'
-    CRLF = '\r\n'
-    UNIX = LF
-    WINDOWS = CRLF
 
 class LineEndingDetectionFailed(Exception):
     pass
@@ -55,15 +50,10 @@ class Source:
 
         self._name = name
         self._content = content.decode(encoding) if isinstance(content, bytes) else content
+        self._content = normalise_line_endings(self._content, line_ending)
 
-        # Detect the content's line endings if necessary
-        if line_ending == LineEnding.DETECT:
-            line_ending = self._detect_line_ending()
-            if line_ending is None:
-                raise LineEndingDetectionFailed('Failed to detect line endings')
-
-        # Normalise line endings
-        self._content = self._normalise_line_endings(self._content, line_ending)
+        if self._content is None:
+            raise LineEndingDetectionFailed()
 
         self._line_ending = line_ending
         self._offset_line_col_map = _OffsetLineColMap(self)
@@ -114,23 +104,6 @@ class Source:
 
         return SourceRange(self, 0, len(self))
 
-    def _detect_line_ending(self):
-        if '\r\n' in self._content:
-            return LineEnding.CRLF
-        elif '\n' in self._content:
-            return LineEnding.LF
-        else:
-            return None
-
-    def _normalise_line_endings(self, content, line_ending):
-        # Normalise all line endings in `content` to LineEnding.LF and return the normalised
-        # content, assuming that the current line endings are given by `line_ending`.
-        # If `line_ending` is LineEnding.LF, then nothing is done.
-        if line_ending == LineEnding.LF:
-            return content
-
-        return content.replace(line_ending.value, LineEnding.LF.value)
-
     def _get_offset(self, offset):
         return self._content[offset]
 
@@ -155,10 +128,23 @@ class SourceLocation:
         """
 
         if not 0 <= offset <= len(source):
-            raise RangeError(f'Offset {offset} out of range')
+            raise ValueError(f'Offset {offset} out of range')
 
         self._source = source
         self._offset = offset
+
+    def __eq__(self, lhs):
+        """Compare this SourceLocation with another for equality. Two SourceLocation objects
+        are equal if they refer to the same Source object (by identity), and store the same
+        offset within that Source.
+        """
+
+        return self._source is lhs._source and self._offset == lhs._offset
+
+    def __neq__(self, lhs):
+        """Compare this SourceLocation with another for inequality."""
+
+        return not self == lhs
 
     @property
     def char(self):
@@ -200,7 +186,7 @@ class SourceRange:
         """
 
         if not 0 <= begin <= end <= len(source):
-            raise RangeError(f'({begin}, {end}) is not a valid SourceRange')
+            raise ValueError(f'({begin}, {end}) is not a valid SourceRange')
 
         self._source = source
         self._begin = begin
@@ -219,6 +205,9 @@ class SourceRange:
 
     def __contains__(self, location):
         """Return True if the given SourceLocation is contained in this range."""
+
+        if not isinstance(location, SourceLocation):
+            raise TypeError(f'expected type SourceLocation, got {type(location).__name__}')
 
         return self._begin <= location.offset < self._end
 
