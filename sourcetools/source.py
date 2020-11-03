@@ -1,10 +1,9 @@
 """Defines the Source, SourceLocation and SourceRange classes."""
 
 from collections import namedtuple
-from enum import Enum, auto
 import bisect
 
-from utility import LineEnding, detect_line_endings, normalise_line_endings
+from .utility import LineEnding, normalise_line_endings
 
 RangePair = namedtuple('RangePair', 'begin end')
 LineCol = namedtuple('LineCol', 'line col')
@@ -58,24 +57,6 @@ class Source:
         self._line_ending = line_ending
         self._offset_line_col_map = _OffsetLineColMap(self)
 
-    def __getitem__(self, index):
-        """Performs indexing in the Source object. The exact nature of the indexing depends
-        on the type of `index`.
-        """
-
-        if isinstance(index, int):
-            return self._get_offset(index)
-        if isinstance(index, SourceLocation):
-            return self._get_pos(index)
-        if isinstance(index, slice):
-            return self._get_slice(index)
-        if isinstance(index, SourceRange):
-            return self._get_range(index)
-
-        name = type(index).__name__
-        raise TypeError(
-            f'Source index must be int, SourceLocation, slice or SourceRange, not {name}')
-
     def __len__(self):
         """Returns the length of the Source's content iterable."""
 
@@ -104,22 +85,6 @@ class Source:
 
         return SourceRange(self, 0, len(self))
 
-    def _get_offset(self, offset):
-        return self._content[offset]
-
-    def _get_pos(self, pos):
-        return self._content[pos.offset]
-
-    def _get_slice(self, slice_):
-        if slice_.step is not None:
-            raise ValueError('Source slice index may not specify a step parameter')
-
-        return self._content[slice_]
-
-    def _get_range(self, range_):
-        begin, end = range_.offsets
-        return self._content[begin:end]
-
 class SourceLocation:
     def __init__(self, source, offset):
         """Initialises the SourceLocation object with a Source object and an integer offset from the
@@ -133,18 +98,44 @@ class SourceLocation:
         self._source = source
         self._offset = offset
 
-    def __eq__(self, lhs):
+    def __eq__(self, rhs):
         """Compare this SourceLocation with another for equality. Two SourceLocation objects
         are equal if they refer to the same Source object (by identity), and store the same
         offset within that Source.
         """
 
-        return self._source is lhs._source and self._offset == lhs._offset
+        if isinstance(rhs, SourceLocation) and self._source is rhs._source:
+            return self._offset == rhs._offset
 
-    def __ne__(self, lhs):
+        return NotImplemented
+
+    def __ne__(self, rhs):
         """Compare this SourceLocation with another for inequality."""
 
-        return not self == lhs
+        return not self == rhs
+
+    def __lt__(self, rhs):
+        """Return True if this SourceLocation object is ordered before the SourceLocation `rhs`.
+        Ordering is performed against the offsets of each SourceLocation.
+        """
+
+        if isinstance(rhs, SourceLocation) and self._source is rhs._source:
+            return self._offset < rhs._offset
+
+        return NotImplemented
+
+    def __gt__(self, rhs):
+        """Return True if this SourceLocation object is ordered after the SourceLocation `rhs`.
+        Ordering is performed against the offsets of each SourceLocation.
+        """
+
+        return self != rhs and not self < rhs
+
+    def __le__(self, rhs):
+        return not self > rhs
+
+    def __ge__(self, rhs):
+        return not self < rhs
 
     @property
     def char(self):
@@ -210,6 +201,24 @@ class SourceRange:
             raise TypeError(f'expected type SourceLocation, got {type(location).__name__}')
 
         return self._begin <= location.offset < self._end
+
+    def __getitem__(self, index):
+        if isinstance(index, int):
+            if 0 <= index < len(self):
+                return self._source.content[self._begin + index]
+
+            raise IndexError(f'Index {index} out of range')
+
+        if isinstance(index, slice):
+            if 0 <= index.start < len(self) and index.start <= index.stop < len(self):
+                if index.step is not None:
+                    raise ValueError('Slice step must be None')
+
+                return self._source.content[index.start:index.stop]
+
+            raise ValueError('Invalid slice')
+
+        raise TypeError('Index must be int or slice')
 
     def lines(self):
         """Return an iterator that yields each logical line of this range as a SourceRange."""
