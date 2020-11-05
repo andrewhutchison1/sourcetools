@@ -244,9 +244,6 @@ class Range:
     def __contains__(self, location: Location) -> bool:
         """Return True if the given Location is contained in this range."""
 
-        if not isinstance(location, Location):
-            raise TypeError(f'expected type Location, got {type(location).__name__}')
-
         return self._begin <= location.offset < self._end
 
     def __getitem__(self, index: Union[int, slice]) -> Union[Location, 'Range']:
