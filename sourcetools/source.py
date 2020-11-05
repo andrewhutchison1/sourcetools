@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from collections import namedtuple
-import bisect
 
 from .utility import LineEnding, normalise_line_endings, lower_bound_index
 
@@ -91,7 +90,7 @@ class Source:
     @property
     def metrics(self):
         """Returns the Source's metrics object."""
-        
+
         return self._metrics
 
     @property
@@ -117,6 +116,7 @@ class SourceLocation:
 
         self._source = source
         self._offset = offset
+        self._linecol = self.source.metrics.get_linecol(offset)
 
     def __hash__(self):
         """Return the hash of this SourceLocation."""
@@ -163,10 +163,16 @@ class SourceLocation:
         return not self < rhs
 
     @property
+    def source(self):
+        """Return the Source object to which this location refers."""
+
+        return self._source
+
+    @property
     def char(self):
         """Returns the character designated by this location."""
 
-        return self._source[self._offset]
+        return self._source.content[self._offset]
 
     @property
     def offset(self):
@@ -175,12 +181,12 @@ class SourceLocation:
         return self._offset
 
     @property
-    def line_col(self):
+    def linecol(self):
         """Returns a LineCol object that designates the line and column number of this
         SourceLocation.
         """
 
-        return self._source.metrics.line_col(self._offset)
+        return self._linecol
 
     @property
     def is_newline(self):
@@ -266,7 +272,7 @@ class SourceRange:
     def chars(self):
         """Returns the string of characters designated by this range."""
 
-        return self._source[self._begin:self._end]
+        return self._source.content[self._begin:self._end]
 
     @property
     def offsets(self):
@@ -319,74 +325,45 @@ def count_linecols(source, offset=0, linecol=LineCol(1,1)):
             col += 1
 
 class SourceMetrics:
-    MAX_POINTS = 32
-
-    def __init__(self, source):
-        if not isinstance(source, Source):
-            raise TypeError('expected a Source object')
-
+    def __init__(self, source: Source, max_search=128):
         self._source = source
-        self._col_count = self._make_col_count()
-        self._offsets, self._line_cols = self._make_line_cols()
+        self._linecol_map = _LineColMap(source, max_search)
+        self._linecol_counts = self._make_linecol_counts()
 
     @property
     def source(self):
         return self._source
 
-    def offset(self, line_col):
-        if line_col in self._line_cols:
-            return self._offsets[self._line_cols.index(line_col)]
+    def get_offset(self, linecol: LineCol) -> int:
+        if not self.valid_linecol(linecol):
+            raise ValueError(f'Invalid LineCol {linecol}')
 
-        index = lower_bound_index(self._line_cols, line_col)
-        lb_offset, lb_linecol = self._offsets[index], self._line_cols[index]
+        return self._linecol_map.get_offset(linecol)
 
-        for i,lc in count_linecols(self.source, lb_offset, lb_linecol):
-            if line_col == lc:
-                break
+    def get_linecol(self, offset: int) -> LineCol:
+        if not self.valid_offset(offset):
+            raise ValueError(f'Invalid offset {offset}')
 
-        return i
+        return self._linecol_map.get_linecol(offset)
 
-    def line_col(self, offset):
-        if not 0 <= offset < len(self.source):
-            raise ValueError('Offset out of range')
+    def valid_linecol(self, linecol: LineCol) -> bool:
+        line,col = linecol
+        return line in self._linecol_counts and 0 < col <= self._linecol_counts[line]
 
-        if offset in self._offsets:
-            return self._line_cols[self._offsets.index(offset)]
+    def valid_offset(self, offset: int) -> bool:
+        return 0 <= offset < len(self.source)
 
-        index = lower_bound_index(self._offsets, offset)
-        lb_offset, lb_linecol = self._offsets[index], self._line_cols[index]
-
-        for i,line_col in count_linecols(self.source, lb_offset, lb_linecol):
-            if i == offset:
-                break
-
-        return line_col
-
-    def valid_line_col(self, line_col):
-        line,col = line_col
-        return line in self._col_count and 0 < col <= self._col_count[line]
-
-    def _make_col_count(self):
+    def _make_linecol_counts(self):
         result = {}
-        for i,line_col in count_linecols(self.source):
-            if self.source.content[i] == LineEnding.LF.value:
-                result[line_col.line] = line_col.col
+
+        for offset,linecol in count_linecols(self.source):
+            if self.source.content[offset] == LineEnding.LF.value:
+                result[linecol.line] = linecol.col
 
         return result
 
-    def _make_line_cols(self):
-        points = len(self.source) // SourceMetrics.MAX_POINTS or 1
-        offsets = list(range(0, len(self.source), points))
-        line_cols = []
-
-        for offset,line_col in count_linecols(self.source):
-            if offset in offsets:
-                line_cols.append(line_col)
-
-        return offsets,line_cols
-
-class LineColMap:
-    def __init__(self, source, max_search: int = 128):
+class _LineColMap:
+    def __init__(self, source, max_search: int):
         self._source = source
         self._offsets, self._linecols = self._make_map(max_search)
 
@@ -432,4 +409,3 @@ class LineColMap:
 
     def _get(self, index: int):
         return self._offsets[index], self._linecols[index]
-
