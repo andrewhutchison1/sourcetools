@@ -1,11 +1,11 @@
-"""Defines the Source, SourceLocation and SourceRange classes."""
+"""Defines the Source, Location and Range classes."""
 
 from dataclasses import dataclass
 from typing import Union, Generic, TypeVar
 
 from .utility import LineEnding, normalise_line_endings, lower_bound_index
 
-_T = TypeVar('T', int, 'SourceLocation')
+_T = TypeVar('T', int, 'Location')
 @dataclass
 class RangePair(Generic[_T]):
     begin: _T
@@ -47,7 +47,7 @@ class Source:
             line_ending (optional): The type of line endings that are present in `content`.
                 The kind of line endings determine how the Source object interprets lines
                 in the source content, and affects the line and column numbers of any
-                `SourceLocation` or `SourceRange` derived therefrom.
+                `Location` or `Range` derived therefrom.
                 If the value of this parameter is `LineEnding.DETECT`, then the line endings
                 of the file will be detected by examining the first newline present in the file.
                 If the value of this parameter is `LineEnding.DETECT` and no newlines are present
@@ -67,7 +67,7 @@ class Source:
         if self._content is None:
             raise LineEndingDetectionFailed()
 
-        self._metrics = SourceMetrics(self)
+        self._metrics = Metrics(self)
 
     def __hash__(self) -> int:
         """Return the hash of this Source object."""
@@ -92,7 +92,7 @@ class Source:
         return self._content
 
     @property
-    def metrics(self) -> 'SourceMetrics':
+    def metrics(self) -> 'Metrics':
         """Returns the Source's metrics object."""
 
         return self._metrics
@@ -103,14 +103,14 @@ class Source:
 
         return self._line_ending
 
-    def range(self) -> 'SourceRange':
-        """Returns a SourceRange consisting of the entirety of the Source content."""
+    def range(self) -> 'Range':
+        """Returns a Range consisting of the entirety of the Source content."""
 
-        return SourceRange(self, 0, len(self))
+        return Range(self, 0, len(self))
 
-class SourceLocation:
+class Location:
     def __init__(self, source: Source, offset: int):
-        """Initialises the SourceLocation object with a Source object and an integer offset from the
+        """Initialises the Location object with a Source object and an integer offset from the
         beginning (0) of the Source's content that uniquely identifies a single source
         character.
         """
@@ -123,47 +123,47 @@ class SourceLocation:
         self._linecol = self.source.metrics.get_linecol(offset)
 
     def __hash__(self) -> int:
-        """Return the hash of this SourceLocation."""
+        """Return the hash of this Location."""
 
         return hash((self._source, self._offset))
 
-    def __eq__(self, rhs: 'SourceLocation') -> bool:
-        """Compare this SourceLocation with another for equality. Two SourceLocation objects
+    def __eq__(self, rhs: 'Location') -> bool:
+        """Compare this Location with another for equality. Two Location objects
         are equal if they refer to the same Source object (by identity), and store the same
         offset within that Source.
         """
 
-        if isinstance(rhs, SourceLocation) and self._source is rhs._source:
+        if isinstance(rhs, Location) and self._source is rhs._source:
             return self._offset == rhs._offset
 
         return NotImplemented
 
-    def __ne__(self, rhs: 'SourceLocation') -> bool:
-        """Compare this SourceLocation with another for inequality."""
+    def __ne__(self, rhs: 'Location') -> bool:
+        """Compare this Location with another for inequality."""
 
         return not self == rhs
 
-    def __lt__(self, rhs: 'SourceLocation') -> bool:
-        """Return True if this SourceLocation object is ordered before the SourceLocation `rhs`.
-        Ordering is performed against the offsets of each SourceLocation.
+    def __lt__(self, rhs: 'Location') -> bool:
+        """Return True if this Location object is ordered before the Location `rhs`.
+        Ordering is performed against the offsets of each Location.
         """
 
-        if isinstance(rhs, SourceLocation) and self._source is rhs._source:
+        if isinstance(rhs, Location) and self._source is rhs._source:
             return self._offset < rhs._offset
 
         return NotImplemented
 
-    def __gt__(self, rhs: 'SourceLocation') -> bool:
-        """Return True if this SourceLocation object is ordered after the SourceLocation `rhs`.
-        Ordering is performed against the offsets of each SourceLocation.
+    def __gt__(self, rhs: 'Location') -> bool:
+        """Return True if this Location object is ordered after the Location `rhs`.
+        Ordering is performed against the offsets of each Location.
         """
 
         return self != rhs and not self < rhs
 
-    def __le__(self, rhs: 'SourceLocation') -> bool:
+    def __le__(self, rhs: 'Location') -> bool:
         return not self > rhs
 
-    def __ge__(self, rhs: 'SourceLocation') -> bool:
+    def __ge__(self, rhs: 'Location') -> bool:
         return not self < rhs
 
     @property
@@ -180,14 +180,14 @@ class SourceLocation:
 
     @property
     def offset(self) -> int:
-        """Returns the SourceLocation's offset within the parent Source object."""
+        """Returns the Location's offset within the parent Source object."""
 
         return self._offset
 
     @property
     def linecol(self) -> LineCol:
         """Returns a LineCol object that designates the line and column number of this
-        SourceLocation.
+        Location.
         """
 
         return self._linecol
@@ -200,13 +200,13 @@ class SourceLocation:
 
     @property
     def is_end(self) -> bool:
-        """Returns True if this SourceLocation refers to the end of parent Source object."""
+        """Returns True if this Location refers to the end of parent Source object."""
 
         return self._offset == len(self._source)
 
-class SourceRange:
+class Range:
     def __init__(self, source: Source, begin: int, end: int):
-        """Initialises the SourceRange object with a Source object and `begin` and `end`
+        """Initialises the Range object with a Source object and `begin` and `end`
         integer offsets which designate, respectively, the range of source characters
         [begin, end) in the Source object.
         """
@@ -215,14 +215,14 @@ class SourceRange:
                 source.metrics.valid_offset(begin),
                 source.metrics.valid_offset(end),
                 begin <= end):
-            raise ValueError(f'({begin}, {end}) is not a valid SourceRange')
+            raise ValueError(f'({begin}, {end}) is not a valid Range')
 
         self._source = source
         self._begin = begin
         self._end = end
 
     def __hash__(self) -> int:
-        """Return the hash of this SourceRange."""
+        """Return the hash of this Range."""
 
         return hash((self._source, self._begin, self._end))
 
@@ -235,17 +235,17 @@ class SourceRange:
         """Iterate through each location in this range.
 
         Yields:
-            SourceLocation: The next location in this range.
+            Location: The next location in this range.
         """
 
         for offset in range(self._begin, self._end):
-            yield SourceLocation(self._source, offset)
+            yield Location(self._source, offset)
 
-    def __contains__(self, location: SourceLocation) -> bool:
-        """Return True if the given SourceLocation is contained in this range."""
+    def __contains__(self, location: Location) -> bool:
+        """Return True if the given Location is contained in this range."""
 
-        if not isinstance(location, SourceLocation):
-            raise TypeError(f'expected type SourceLocation, got {type(location).__name__}')
+        if not isinstance(location, Location):
+            raise TypeError(f'expected type Location, got {type(location).__name__}')
 
         return self._begin <= location.offset < self._end
 
@@ -268,7 +268,7 @@ class SourceRange:
         raise TypeError('Index must be int or slice')
 
     def lines(self):
-        """Return an iterator that yields each logical line of this range as a SourceRange."""
+        """Return an iterator that yields each logical line of this range as a Range."""
 
         begin = None
         for location in self:
@@ -276,7 +276,7 @@ class SourceRange:
                 begin = location.offset
 
             if location.is_newline:
-                yield SourceRange(self._source, begin, location.offset)
+                yield Range(self._source, begin, location.offset)
                 begin = None
 
     @property
@@ -287,21 +287,21 @@ class SourceRange:
 
     @property
     def offsets(self) -> RangePair[int]:
-        """Returns RangePair containing the begin and end offsets of this SourceRange within the
+        """Returns RangePair containing the begin and end offsets of this Range within the
         parent Source object.
         """
 
         return RangePair(self._begin, self._end)
 
     @property
-    def locations(self) -> RangePair[SourceLocation]:
-        """Returns a RangePair containing the begin and end locations of the SourceRange within the
-        parent Source object, returning them as SourceLocation objects.
+    def locations(self) -> RangePair[Location]:
+        """Returns a RangePair containing the begin and end locations of the Range within the
+        parent Source object, returning them as Location objects.
         """
 
         return RangePair(
-            SourceLocation(self._source, self._begin),
-            SourceLocation(self._source, self._end))
+            Location(self._source, self._begin),
+            Location(self._source, self._end))
 
     @property
     def is_empty(self) -> bool:
@@ -335,7 +335,7 @@ def count_linecols(source: Source, offset: int = 0, linecol: LineCol = LineCol(1
         else:
             col += 1
 
-class SourceMetrics:
+class Metrics:
     def __init__(self, source: Source, max_search: int = 128):
         self._source = source
         self._linecol_map = _LineColMap(source, max_search)
