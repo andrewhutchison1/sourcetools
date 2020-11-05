@@ -1,12 +1,21 @@
 """Defines the Source, SourceLocation and SourceRange classes."""
 
+from dataclasses import dataclass
 from collections import namedtuple
 import bisect
 
 from .utility import LineEnding, normalise_line_endings
 
 RangePair = namedtuple('RangePair', 'begin end')
-LineCol = namedtuple('LineCol', 'line col')
+
+@dataclass(order=True)
+class LineCol:
+    line: int
+    col: int
+
+    def __iter__(self):
+        yield self.line
+        yield self.col
 
 class LineEndingDetectionFailed(Exception):
     pass
@@ -50,12 +59,17 @@ class Source:
         self._name = name
         self._content = content.decode(encoding) if isinstance(content, bytes) else content
         self._content = normalise_line_endings(self._content, line_ending)
+        self._line_ending = line_ending
 
         if self._content is None:
             raise LineEndingDetectionFailed()
 
-        self._line_ending = line_ending
-        self._offset_line_col_map = _OffsetLineColMap(self)
+        self._metrics = SourceMetrics(self)
+
+    def __hash__(self):
+        """Return the hash of this Source object."""
+
+        return hash((self._name, self._content))
 
     def __len__(self):
         """Returns the length of the Source's content iterable."""
@@ -73,6 +87,12 @@ class Source:
         """Returns the Source's content."""
 
         return self._content
+
+    @property
+    def metrics(self):
+        """Returns the Source's metrics object."""
+        
+        return self._metrics
 
     @property
     def line_ending(self):
@@ -97,6 +117,11 @@ class SourceLocation:
 
         self._source = source
         self._offset = offset
+
+    def __hash__(self):
+        """Return the hash of this SourceLocation."""
+
+        return hash((self._source, self._offset))
 
     def __eq__(self, rhs):
         """Compare this SourceLocation with another for equality. Two SourceLocation objects
@@ -155,7 +180,7 @@ class SourceLocation:
         SourceLocation.
         """
 
-        return self._source._offset_line_col_map.lookup_line_col(self._offset)
+        return self._source.metrics.line_col(self._offset)
 
     @property
     def is_newline(self):
@@ -182,6 +207,11 @@ class SourceRange:
         self._source = source
         self._begin = begin
         self._end = end
+
+    def __hash__(self):
+        """Return the hash of this SourceRange."""
+
+        return hash((self._source, self._begin, self._end))
 
     def __len__(self):
         """Return the number of locations in this range."""
@@ -262,84 +292,82 @@ class SourceRange:
 
         return len(self) == 0
 
-class _OffsetLineColMap:
+class SourceMetrics:
+    MAX_POINTS = 32
+
     def __init__(self, source):
+        if not isinstance(source, Source):
+            raise TypeError('expected a Source object')
+
         self._source = source
-        self._forward_map = self._create_forward_map()
-        self._backward_list = self._create_backward_list(self._forward_map)
-        self._eof_newline = self._has_eof_newline()
+        self._col_count = self._make_col_count()
+        self._offsets, self._line_cols = self._make_line_cols()
 
-    def _has_eof_newline(self):
-        # Return True if the parent Source object has a newline at the end of the file.
+    @property
+    def source(self):
+        return self._source
 
-        if len(self._source.content) > 0:
-            return self._source.content[-1] == LineEnding.LF.value
+    def counter(self, offset=0, line_col=LineCol(1,1)):
+        line,col = line_col
+        for i,ch in enumerate(self.source.content[offset:], start=offset):
+            yield i,LineCol(line, col)
 
-        return False
+            if ch == LineEnding.LF.value:
+                line += 1
+                col = 1
+            else:
+                col += 1
 
-    def _create_forward_map(self):
-        # Creates and returns a dictionary whose keys are line numbers and whose offsets
-        # are the offset in which that line begins in the parent Source object.
+    def offset(self, line_col):
+        if line_col in self._line_cols:
+            return self._offsets[self._line_cols.index(line_col)]
 
-        # The first line always begins at offset 0 (even if the source is empty)
-        line_count = 1
-        result = {line_count: 0}
+        start_index = bisect.bisect_left(self._line_cols, line_col) - 1
+        start_offset = self._offsets[start_index]
+        start_line_col = self._line_cols[start_index]
 
-        next_line = self._find_next_line()
-        while next_line is not None:
-            line_count += 1
-            result[line_count] = next_line
-            next_line = self._find_next_line(next_line)
+        for i,lc in self.counter(start_offset, start_line_col):
+            if line_col == lc:
+                break
+
+        return i
+
+    def line_col(self, offset):
+        if not 0 <= offset < len(self.source):
+            raise ValueError('Offset out of range')
+
+        if offset in self._offsets:
+            return self._line_cols[self._offsets.index(offset)]
+
+        start_index = bisect.bisect_left(self._offsets, offset) - 1
+        start_offset = self._offsets[start_index]
+        start_line_col = self._line_cols[start_index]
+
+        for i,line_col in self.counter(start_offset, start_line_col):
+            if i == offset:
+                break
+
+        return line_col
+
+    def valid_line_col(self, line_col):
+        line,col = line_col
+        return line in self._col_count and 0 < col <= self._col_count[line]
+
+    def _make_col_count(self):
+        result = {}
+        for i,line_col in self.counter():
+            if self.source.content[i] == LineEnding.LF.value:
+                result[line_col.line] = line_col.col
 
         return result
 
-    def _create_backward_list(self, forward_map):
-        # Create and return a dictionary that is the inverse of the given forward map,
-        # see `_create_forward_map`.
+    def _make_line_cols(self):
+        points = len(self.source) // SourceMetrics.MAX_POINTS or 1
+        offsets = list(range(0, len(self.source), points))
+        line_cols = []
 
-        return [(offset, line) for line,offset in forward_map.items()]
+        for offset,line_col in self.counter():
+            if offset in offsets:
+                line_cols.append(line_col)
 
-    def _find_next_line(self, start_offset=0):
-        # Search, from `start_offset`, for a newline in the parent Source.
-        # If a newline is found, return the offset of the first character of the line
-        # that immediately follows. If a newline is not found, or the newline is at the end
-        # of the parent Source object, then return None.
-
-        begin = self._source.content.find(LineEnding.LF.value, start_offset)
-        end = begin + 1
-
-        return end if begin != -1 and end < len(self._source) else None
-
-    def _is_valid_line_col(self, line_col):
-        # Returns True if the given LineCol object is valid (refers to a valid line and column
-        # in the parent Source object).
-
-        if line_col.line not in self._forward_map:
-            return False
-
-        if line_col.line + 1 in self._forward_map:
-            end_offset = self._forward_map[line_col.line + 1] - 1
-        else:
-            end_offset = len(self._source) - 1 if self._has_eof_newline else 0
-
-        return 1 <= line_col.col <= end_offset - self._forward_map[line_col.line]
-
-    def lookup_offset(self, line_col):
-        # Return the offset of the character located by the `LineCol` object given
-        # as `line_col` in the parent Source object.
-
-        if not self._is_valid_line_col(line_col):
-            raise ValueError(f'{line_col} is not a valid line and/or column')
-
-        return self._forward_map[line_col.line] + line_col.col - 1
-
-    def lookup_line_col(self, offset):
-        # Return a `LineCol` object that designates the character at `offset` in the parent
-        # Source object.
-
-        if not 0 <= offset < len(self._source):
-            raise ValueError(f'{offset} is not a valid offset')
-
-        offsets = [o for o,_ in self._backward_list]
-        line_offset, line_num = self._backward_list[bisect.bisect_right(offsets, offset) - 1]
-        return LineCol(line_num, offset - line_offset + 1)
+        return offsets,line_cols
