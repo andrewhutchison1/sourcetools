@@ -370,6 +370,11 @@ class Metrics:
     def valid_offset(self, offset: int) -> bool:
         return 0 <= offset <= len(self.source)
 
+    def line_count(self) -> int:
+        """Return the number of lines in the parent Source."""
+
+        return len(self._linecol_counts)
+
     def _make_linecol_counts(self):
         result = {}
 
