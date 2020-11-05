@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from collections import namedtuple
 import bisect
 
-from .utility import LineEnding, normalise_line_endings
+from .utility import LineEnding, normalise_line_endings, lower_bound_index
 
 RangePair = namedtuple('RangePair', 'begin end')
 
@@ -292,7 +292,7 @@ class SourceRange:
 
         return len(self) == 0
 
-def count_linecols(source, *, offset=0, linecol=LineCol(1,1)):
+def count_linecols(source, offset=0, linecol=LineCol(1,1)):
     """Generate line and column information for each character in `source`.
 
     Return an object that yields a 2-tuple containing an offset and LineCol object
@@ -337,11 +337,10 @@ class SourceMetrics:
         if line_col in self._line_cols:
             return self._offsets[self._line_cols.index(line_col)]
 
-        start_index = bisect.bisect_left(self._line_cols, line_col) - 1
-        start_offset = self._offsets[start_index]
-        start_line_col = self._line_cols[start_index]
+        index = lower_bound_index(self._line_cols, line_col)
+        lb_offset, lb_linecol = self._offsets[index], self._line_cols[index]
 
-        for i,lc in self.counter(start_offset, start_line_col):
+        for i,lc in count_linecols(self.source, lb_offset, lb_linecol):
             if line_col == lc:
                 break
 
@@ -354,11 +353,10 @@ class SourceMetrics:
         if offset in self._offsets:
             return self._line_cols[self._offsets.index(offset)]
 
-        start_index = bisect.bisect_left(self._offsets, offset) - 1
-        start_offset = self._offsets[start_index]
-        start_line_col = self._line_cols[start_index]
+        index = lower_bound_index(self._offsets, offset)
+        lb_offset, lb_linecol = self._offsets[index], self._line_cols[index]
 
-        for i,line_col in self.counter(start_offset, start_line_col):
+        for i,line_col in count_linecols(self.source, lb_offset, lb_linecol):
             if i == offset:
                 break
 
@@ -370,7 +368,7 @@ class SourceMetrics:
 
     def _make_col_count(self):
         result = {}
-        for i,line_col in self.counter():
+        for i,line_col in count_linecols(self.source):
             if self.source.content[i] == LineEnding.LF.value:
                 result[line_col.line] = line_col.col
 
@@ -381,7 +379,7 @@ class SourceMetrics:
         offsets = list(range(0, len(self.source), points))
         line_cols = []
 
-        for offset,line_col in self.counter():
+        for offset,line_col in count_linecols(self.source):
             if offset in offsets:
                 line_cols.append(line_col)
 
