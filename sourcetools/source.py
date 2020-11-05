@@ -211,10 +211,10 @@ class Range:
         [begin, end) in the Source object.
         """
 
-        if not all(
+        if not all((
                 source.metrics.valid_offset(begin),
                 source.metrics.valid_offset(end),
-                begin <= end):
+                begin <= end)):
             raise ValueError(f'({begin}, {end}) is not a valid Range')
 
         self._source = source
