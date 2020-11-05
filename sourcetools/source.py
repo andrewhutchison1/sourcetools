@@ -1,11 +1,15 @@
 """Defines the Source, SourceLocation and SourceRange classes."""
 
 from dataclasses import dataclass
-from collections import namedtuple
+from typing import Union, Generic, TypeVar
 
 from .utility import LineEnding, normalise_line_endings, lower_bound_index
 
-RangePair = namedtuple('RangePair', 'begin end')
+_T = TypeVar('T', int, 'SourceLocation')
+@dataclass
+class RangePair(Generic[_T]):
+    begin: _T
+    end: _T
 
 @dataclass(order=True)
 class LineCol:
@@ -65,65 +69,65 @@ class Source:
 
         self._metrics = SourceMetrics(self)
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         """Return the hash of this Source object."""
 
         return hash((self._name, self._content))
 
-    def __len__(self):
+    def __len__(self) -> int:
         """Returns the length of the Source's content iterable."""
 
         return len(self._content)
 
     @property
-    def name(self):
+    def name(self) -> str:
         """Returns the name of this Source object."""
 
         return self._name
 
     @property
-    def content(self):
+    def content(self) -> str:
         """Returns the Source's content."""
 
         return self._content
 
     @property
-    def metrics(self):
+    def metrics(self) -> 'SourceMetrics':
         """Returns the Source's metrics object."""
 
         return self._metrics
 
     @property
-    def line_ending(self):
+    def line_ending(self) -> LineEnding:
         """Returns the line endings type of this Source object."""
 
         return self._line_ending
 
-    def range(self):
+    def range(self) -> 'SourceRange':
         """Returns a SourceRange consisting of the entirety of the Source content."""
 
         return SourceRange(self, 0, len(self))
 
 class SourceLocation:
-    def __init__(self, source, offset):
+    def __init__(self, source: Source, offset: int):
         """Initialises the SourceLocation object with a Source object and an integer offset from the
         beginning (0) of the Source's content that uniquely identifies a single source
         character.
         """
 
-        if not 0 <= offset <= len(source):
+        if not source.metrics.valid_offset(offset):
             raise ValueError(f'Offset {offset} out of range')
 
         self._source = source
         self._offset = offset
         self._linecol = self.source.metrics.get_linecol(offset)
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         """Return the hash of this SourceLocation."""
 
         return hash((self._source, self._offset))
 
-    def __eq__(self, rhs):
+    def __eq__(self, rhs: 'SourceLocation') -> bool:
         """Compare this SourceLocation with another for equality. Two SourceLocation objects
         are equal if they refer to the same Source object (by identity), and store the same
         offset within that Source.
@@ -134,12 +138,12 @@ class SourceLocation:
 
         return NotImplemented
 
-    def __ne__(self, rhs):
+    def __ne__(self, rhs: 'SourceLocation') -> bool:
         """Compare this SourceLocation with another for inequality."""
 
         return not self == rhs
 
-    def __lt__(self, rhs):
+    def __lt__(self, rhs: 'SourceLocation') -> bool:
         """Return True if this SourceLocation object is ordered before the SourceLocation `rhs`.
         Ordering is performed against the offsets of each SourceLocation.
         """
@@ -149,39 +153,39 @@ class SourceLocation:
 
         return NotImplemented
 
-    def __gt__(self, rhs):
+    def __gt__(self, rhs: 'SourceLocation') -> bool:
         """Return True if this SourceLocation object is ordered after the SourceLocation `rhs`.
         Ordering is performed against the offsets of each SourceLocation.
         """
 
         return self != rhs and not self < rhs
 
-    def __le__(self, rhs):
+    def __le__(self, rhs: 'SourceLocation') -> bool:
         return not self > rhs
 
-    def __ge__(self, rhs):
+    def __ge__(self, rhs: 'SourceLocation') -> bool:
         return not self < rhs
 
     @property
-    def source(self):
+    def source(self) -> Source:
         """Return the Source object to which this location refers."""
 
         return self._source
 
     @property
-    def char(self):
+    def char(self) -> str:
         """Returns the character designated by this location."""
 
         return self._source.content[self._offset]
 
     @property
-    def offset(self):
+    def offset(self) -> int:
         """Returns the SourceLocation's offset within the parent Source object."""
 
         return self._offset
 
     @property
-    def linecol(self):
+    def linecol(self) -> LineCol:
         """Returns a LineCol object that designates the line and column number of this
         SourceLocation.
         """
@@ -189,48 +193,55 @@ class SourceLocation:
         return self._linecol
 
     @property
-    def is_newline(self):
+    def is_newline(self) -> bool:
         """Return True if the current location refers to a newline character."""
 
         return self.char == LineEnding.LF.value
 
     @property
-    def is_end(self):
+    def is_end(self) -> bool:
         """Returns True if this SourceLocation refers to the end of parent Source object."""
 
         return self._offset == len(self._source)
 
 class SourceRange:
-    def __init__(self, source, begin, end):
+    def __init__(self, source: Source, begin: int, end: int):
         """Initialises the SourceRange object with a Source object and `begin` and `end`
         integer offsets which designate, respectively, the range of source characters
         [begin, end) in the Source object.
         """
 
-        if not 0 <= begin <= end <= len(source):
+        if not all(
+                source.metrics.valid_offset(begin),
+                source.metrics.valid_offset(end),
+                begin <= end):
             raise ValueError(f'({begin}, {end}) is not a valid SourceRange')
 
         self._source = source
         self._begin = begin
         self._end = end
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         """Return the hash of this SourceRange."""
 
         return hash((self._source, self._begin, self._end))
 
-    def __len__(self):
+    def __len__(self) -> int:
         """Return the number of locations in this range."""
 
         return self._end - self._begin
 
     def __iter__(self):
-        """Return an iterator that yields each location in this range."""
+        """Iterate through each location in this range.
+
+        Yields:
+            SourceLocation: The next location in this range.
+        """
 
         for offset in range(self._begin, self._end):
             yield SourceLocation(self._source, offset)
 
-    def __contains__(self, location):
+    def __contains__(self, location: SourceLocation) -> bool:
         """Return True if the given SourceLocation is contained in this range."""
 
         if not isinstance(location, SourceLocation):
@@ -238,7 +249,7 @@ class SourceRange:
 
         return self._begin <= location.offset < self._end
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: Union[int, slice]) -> str:
         if isinstance(index, int):
             if 0 <= index < len(self):
                 return self._source.content[self._begin + index]
@@ -269,13 +280,13 @@ class SourceRange:
                 begin = None
 
     @property
-    def chars(self):
+    def chars(self) -> str:
         """Returns the string of characters designated by this range."""
 
         return self._source.content[self._begin:self._end]
 
     @property
-    def offsets(self):
+    def offsets(self) -> RangePair[int]:
         """Returns RangePair containing the begin and end offsets of this SourceRange within the
         parent Source object.
         """
@@ -283,7 +294,7 @@ class SourceRange:
         return RangePair(self._begin, self._end)
 
     @property
-    def locations(self):
+    def locations(self) -> RangePair[SourceLocation]:
         """Returns a RangePair containing the begin and end locations of the SourceRange within the
         parent Source object, returning them as SourceLocation objects.
         """
@@ -293,21 +304,21 @@ class SourceRange:
             SourceLocation(self._source, self._end))
 
     @property
-    def is_empty(self):
+    def is_empty(self) -> bool:
         """Return True if this range is empty."""
 
         return len(self) == 0
 
-def count_linecols(source, offset=0, linecol=LineCol(1,1)):
+def count_linecols(source: Source, offset: int = 0, linecol: LineCol = LineCol(1,1)):
     """Generate line and column information for each character in `source`.
 
     Return an object that yields a 2-tuple containing an offset and LineCol object
     representing the line and column position of each character in `source`.
 
     Args:
-        source (Source): The Source whose content will be counted.
-        offset (int, optional): The offset to start counting from.
-        linecol (LineCol, optional): A LineCol object to start counting from.
+        source: The Source whose content will be counted.
+        offset (optional): The offset to start counting from.
+        linecol (optional): A LineCol object to start counting from.
 
     Yields:
         (int, LineCol): A 2-tuple whose first element is the offset of the yielded
@@ -325,7 +336,7 @@ def count_linecols(source, offset=0, linecol=LineCol(1,1)):
             col += 1
 
 class SourceMetrics:
-    def __init__(self, source: Source, max_search=128):
+    def __init__(self, source: Source, max_search: int = 128):
         self._source = source
         self._linecol_map = _LineColMap(source, max_search)
         self._linecol_counts = self._make_linecol_counts()
@@ -351,7 +362,7 @@ class SourceMetrics:
         return line in self._linecol_counts and 0 < col <= self._linecol_counts[line]
 
     def valid_offset(self, offset: int) -> bool:
-        return 0 <= offset < len(self.source)
+        return 0 <= offset <= len(self.source)
 
     def _make_linecol_counts(self):
         result = {}
@@ -363,15 +374,15 @@ class SourceMetrics:
         return result
 
 class _LineColMap:
-    def __init__(self, source, max_search: int):
+    def __init__(self, source: Source, max_search: int):
         self._source = source
         self._offsets, self._linecols = self._make_map(max_search)
 
     @property
-    def source(self):
+    def source(self) -> Source:
         return self._source
 
-    def get_offset(self, linecol: LineCol):
+    def get_offset(self, linecol: LineCol) -> int:
         if linecol in self._linecols:
             return self._offsets[self._linecols.index(linecol)]
 
@@ -384,7 +395,7 @@ class _LineColMap:
 
         return None
 
-    def get_linecol(self, offset: int):
+    def get_linecol(self, offset: int) -> LineCol:
         if offset in self._offsets:
             return self._linecols[self._offsets.index(offset)]
 
