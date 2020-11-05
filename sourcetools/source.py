@@ -1,7 +1,7 @@
 """Defines the Source, Location and Range classes."""
 
 from dataclasses import dataclass
-from typing import Union, Generic, TypeVar
+from typing import Union, Generic, TypeVar, Iterator, Tuple
 
 from .utility import LineEnding, normalise_line_endings, lower_bound_index
 
@@ -231,11 +231,11 @@ class Range:
 
         return self._end - self._begin
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Location]:
         """Iterate through each location in this range.
 
         Yields:
-            Location: The next location in this range.
+            The next location in this range.
         """
 
         for offset in range(self._begin, self._end):
@@ -249,10 +249,10 @@ class Range:
 
         return self._begin <= location.offset < self._end
 
-    def __getitem__(self, index: Union[int, slice]) -> str:
+    def __getitem__(self, index: Union[int, slice]) -> Union[Location, 'Range']:
         if isinstance(index, int):
             if 0 <= index < len(self):
-                return self._source.content[self._begin + index]
+                return Location(self.source, self._begin + index)
 
             raise IndexError(f'Index {index} out of range')
 
@@ -261,13 +261,15 @@ class Range:
                 if index.step is not None:
                     raise ValueError('Slice step must be None')
 
-                return self._source.content[index.start:index.stop]
+                begin = self._begin + index.start
+                end = self._begin + index.stop
+                return Range(self.source, begin, end)
 
             raise ValueError('Invalid slice')
 
         raise TypeError('Index must be int or slice')
 
-    def lines(self):
+    def lines(self) -> Iterator['Range']:
         """Return an iterator that yields each logical line of this range as a Range."""
 
         begin = None
@@ -278,6 +280,12 @@ class Range:
             if location.is_newline:
                 yield Range(self._source, begin, location.offset)
                 begin = None
+
+    @property
+    def source(self) -> Source:
+        """Return the parent Source object of this range."""
+
+        return self._source
 
     @property
     def chars(self) -> str:
@@ -309,7 +317,8 @@ class Range:
 
         return len(self) == 0
 
-def count_linecols(source: Source, offset: int = 0, linecol: LineCol = LineCol(1,1)):
+def count_linecols(source: Source, offset: int = 0, linecol: LineCol = LineCol(1,1)) \
+        -> Iterator[Tuple[int, LineCol]]:
     """Generate line and column information for each character in `source`.
 
     Return an object that yields a 2-tuple containing an offset and LineCol object
@@ -321,8 +330,8 @@ def count_linecols(source: Source, offset: int = 0, linecol: LineCol = LineCol(1
         linecol (optional): A LineCol object to start counting from.
 
     Yields:
-        (int, LineCol): A 2-tuple whose first element is the offset of the yielded
-            character and whose second element is the LineCol.
+        A 2-tuple whose first element is the offset of the yielded character and whose second
+        element is the LineCol.
     """
 
     line,col = linecol
@@ -342,7 +351,7 @@ class Metrics:
         self._linecol_counts = self._make_linecol_counts()
 
     @property
-    def source(self):
+    def source(self) -> Source:
         return self._source
 
     def get_offset(self, linecol: LineCol) -> int:
