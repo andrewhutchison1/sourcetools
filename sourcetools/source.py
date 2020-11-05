@@ -292,6 +292,32 @@ class SourceRange:
 
         return len(self) == 0
 
+def count_linecols(source, *, offset=0, linecol=LineCol(1,1)):
+    """Generate line and column information for each character in `source`.
+
+    Return an object that yields a 2-tuple containing an offset and LineCol object
+    representing the line and column position of each character in `source`.
+
+    Args:
+        source (Source): The Source whose content will be counted.
+        offset (int, optional): The offset to start counting from.
+        linecol (LineCol, optional): A LineCol object to start counting from.
+
+    Yields:
+        (int, LineCol): A 2-tuple whose first element is the offset of the yielded
+            character and whose second element is the LineCol.
+    """
+
+    line,col = linecol
+    for i,char in enumerate(source.content[offset:], start=offset):
+        yield i,LineCol(line, col)
+
+        if char == LineEnding.LF.value:
+            line += 1
+            col = 1
+        else:
+            col += 1
+
 class SourceMetrics:
     MAX_POINTS = 32
 
@@ -306,17 +332,6 @@ class SourceMetrics:
     @property
     def source(self):
         return self._source
-
-    def counter(self, offset=0, line_col=LineCol(1,1)):
-        line,col = line_col
-        for i,ch in enumerate(self.source.content[offset:], start=offset):
-            yield i,LineCol(line, col)
-
-            if ch == LineEnding.LF.value:
-                line += 1
-                col = 1
-            else:
-                col += 1
 
     def offset(self, line_col):
         if line_col in self._line_cols:
