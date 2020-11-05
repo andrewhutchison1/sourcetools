@@ -384,3 +384,52 @@ class SourceMetrics:
                 line_cols.append(line_col)
 
         return offsets,line_cols
+
+class LineColMap:
+    def __init__(self, source, max_search: int = 128):
+        self._source = source
+        self._offsets, self._linecols = self._make_map(max_search)
+
+    @property
+    def source(self):
+        return self._source
+
+    def get_offset(self, linecol: LineCol):
+        if linecol in self._linecols:
+            return self._offsets[self._linecols.index(linecol)]
+
+        index = lower_bound_index(self._linecols, linecol)
+        lb_offset, lb_linecol = self._get(index)
+
+        for s_offset,s_linecol in count_linecols(self.source, lb_offset, lb_linecol):
+            if s_linecol == linecol:
+                return s_offset
+
+        return None
+
+    def get_linecol(self, offset: int):
+        if offset in self._offsets:
+            return self._linecols[self._offsets.index(offset)]
+
+        index = lower_bound_index(self._offsets, offset)
+        lb_offset, lb_linecol = self._get(index)
+
+        for s_offset,s_linecol in count_linecols(self.source, lb_offset, lb_linecol):
+            if s_offset == offset:
+                return s_linecol
+
+        return None
+
+    def _make_map(self, max_search: int):
+        offsets = list(range(0, len(self.source), max_search))
+        linecols = []
+
+        for offset,linecol in count_linecols(self.source):
+            if offset in offsets:
+                linecols.append(linecol)
+
+        return offsets,linecols
+
+    def _get(self, index: int):
+        return self._offsets[index], self._linecols[index]
+
