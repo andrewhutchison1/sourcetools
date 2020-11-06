@@ -1,7 +1,7 @@
 """Defines the Source, Location and Range classes."""
 
 from dataclasses import dataclass
-from typing import Union, Generic, TypeVar, Iterator, Tuple
+from typing import Union, Generic, TypeVar, Iterator, Tuple, List
 
 from .utility import LineEnding, normalise_line_endings, lower_bound_index
 
@@ -27,13 +27,13 @@ class Source:
     """Represents an single logical unit of source code, e.g. the contents of a source file.
     """
 
-    def __init__(self, content, *, name=None, encoding='utf-8', line_ending=LineEnding.LF):
+    def __init__(self, content, *, name='<none>', encoding='utf-8', line_ending=LineEnding.LF):
         """Initialise a Source object with contents and optional name, encoding and line endings.
 
         Args:
             content: The textual contents of the Source object. May be `str` or `bytes`.
 
-            name (optional): The logical name of the Source object.
+            name (optional, default "<none>"): The logical name of the Source object.
                 Typically, this should be the filename or path of the Source file if it
                 was read from a file, or something like "<stdin>" if the Source was read from
                 standard input.
@@ -166,6 +166,9 @@ class Location:
     def __ge__(self, rhs: 'Location') -> bool:
         return not self < rhs
 
+    def __str__(self) -> str:
+        return f'{self.source.name} {self.linecol.line}:{self.linecol.col}'
+
     @property
     def source(self) -> Source:
         """Return the Source object to which this location refers."""
@@ -191,6 +194,18 @@ class Location:
         """
 
         return self._linecol
+
+    @property
+    def line(self) -> int:
+        """Return the line number of this location."""
+
+        return self.linecol.line
+
+    @property
+    def col(self) -> int:
+        """Return the column number of this location."""
+
+        return self.linecol.col
 
     @property
     def is_newline(self) -> bool:
@@ -231,6 +246,32 @@ class Range:
 
         return self._end - self._begin
 
+    def __eq__(self, rhs: 'Range') -> bool:
+        return hash(rhs) == hash(self)
+
+    def __ne__(self, rhs: 'Range') -> bool:
+        return not self == rhs
+
+    def __lt__(self, rhs: 'Range') -> bool:
+        includes_begin = all((
+                rhs._begin <= self._begin < rhs._end,
+                self._end < rhs._end))
+
+        includes_end = all((
+                rhs._begin < self._begin < rhs._end,
+                self._end <= rhs._end))
+
+        return includes_begin != includes_end
+
+    def __gt__(self, rhs: 'Range') -> bool:
+        return rhs < self and rhs != self
+
+    def __le__(self, rhs: 'Range') -> bool:
+        return not self > rhs
+
+    def __ge__(self, rhs: 'Range') -> bool:
+        return not self < rhs
+
     def __iter__(self) -> Iterator[Location]:
         """Iterate through each location in this range.
 
@@ -240,6 +281,15 @@ class Range:
 
         for offset in range(self._begin, self._end):
             yield Location(self._source, offset)
+
+    def __and__(self, rhs: 'Range') -> 'Range':
+        if not any(location in self for location in rhs):
+            return None
+
+        return Range(
+                self.source,
+                max((self.offsets.begin, rhs.offsets.begin)),
+                min((self.offsets.end, rhs.offsets.end)))
 
     def __contains__(self, location: Location) -> bool:
         """Return True if the given Location is contained in this range."""
@@ -266,8 +316,28 @@ class Range:
 
         raise TypeError('Index must be int or slice')
 
-    def lines(self) -> Iterator['Range']:
-        """Return an iterator that yields each logical line of this range as a Range."""
+    def __str__(self) -> str:
+        begin = f'{self.locations.begin.linecol.line}:{self.locations.begin.linecol.col}'
+        end = f'{self.locations.end.linecol.line}:{self.locations.end.linecol.col}'
+        return f'{self.source.name} {begin}-{end}'
+
+    def full_lines(self) -> 'Range':
+        """Return a Range that is a (not necessarily strict) superset of this Range that
+        contains only complete logical source lines.
+        """
+
+        return Range(
+                self.source,
+                self.source.metrics.get_line_start_offset(self.locations.begin.line),
+                self.source.metrics.get_line_end_offset(self.locations.end.line))
+
+    def each_line(self) -> Iterator['Line']:
+        """Return an iterator that yields each logical source line of this Range.
+
+        Yields:
+            Each logical source line of this Range. The first and last lines yielded
+            may not be complete source lines if this Range does not include them completely.
+        """
 
         begin = None
         for location in self:
@@ -275,8 +345,11 @@ class Range:
                 begin = location.offset
 
             if location.is_newline:
-                yield Range(self._source, begin, location.offset)
+                yield Line(self.source, begin, location.offset)
                 begin = None
+
+        if begin is not None:
+            yield Line(self.source, begin, self.offsets.end)
 
     @property
     def source(self) -> Source:
@@ -313,6 +386,19 @@ class Range:
         """Return True if this range is empty."""
 
         return len(self) == 0
+
+    @property
+    def line_numbers(self) -> List[int]:
+        """Return a list consisting of the line numbers each (possibly partial) logical
+        source line in this range.
+        """
+
+        return list(range(self.locations.begin.line, self.locations.end.line + 1))
+
+class Line(Range):
+    @property
+    def line_number(self):
+        return self.locations.begin.line
 
 def count_linecols(source: Source, offset: int = 0, linecol: LineCol = LineCol(1,1)) \
         -> Iterator[Tuple[int, LineCol]]:
@@ -361,7 +447,36 @@ class Metrics:
         if not self.valid_offset(offset):
             raise ValueError(f'Invalid offset {offset}')
 
+        if offset == len(self.source):
+            return LineCol(*list(self._linecol_counts.items())[-1])
+
         return self._linecol_map.get_linecol(offset)
+
+    def get_lines(self, begin: int, end: int) -> Tuple[int, int]:
+        """Return a Tuple that denotes begin, end offsets of the lines denoted by `lines`."""
+        
+        if not self.valid_line(begin) or not self.valid_line(end) or not begin < end:
+            raise ValueError('Not a valid line number')
+
+        begin_offset = self.get_offset(LineCol(begin, 1))
+        end_offset = self.get_offset(LineCol(end - 1, self._linecol_counts[end - 1]))
+        return (begin_offset, end_offset)
+
+    def get_line_start_offset(self, line: int) -> int:
+        """Return the offset of the character at the start of the logical source line `line`."""
+
+        if not self.valid_line(line):
+            raise ValueError('Not a valid line number')
+
+        return self.get_offset(LineCol(line, 1))
+
+    def get_line_end_offset(self, line: int) -> int:
+        """Return the offset of the character at the end of the logical source line `line`."""
+
+        if not self.valid_line(line):
+            raise ValueError('Not a valid line number')
+
+        return self.get_offset(LineCol(line, self._linecol_counts[line]))
 
     def valid_linecol(self, linecol: LineCol) -> bool:
         line,col = linecol
@@ -369,6 +484,11 @@ class Metrics:
 
     def valid_offset(self, offset: int) -> bool:
         return 0 <= offset <= len(self.source)
+
+    def valid_line(self, line: int) -> bool:
+        """Return True if the line number `line` is valid."""
+
+        return 1 <= line <= self.line_count()
 
     def line_count(self) -> int:
         """Return the number of lines in the parent Source."""
