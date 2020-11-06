@@ -23,6 +23,10 @@ class LineCol:
 class LineEndingDetectionFailed(Exception):
     pass
 
+def open_file(path: str, /, line_ending=LineEnding.DETECT) -> 'Source':
+    with open(path) as f:
+        return Source(f.read(), name=f.name, line_ending=line_ending)
+
 class Source:
     """Represents an single logical unit of source code, e.g. the contents of a source file.
     """
