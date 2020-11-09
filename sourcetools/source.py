@@ -23,10 +23,6 @@ class LineCol:
 class LineEndingDetectionFailed(Exception):
     pass
 
-def open_file(path: str, /, line_ending=LineEnding.DETECT) -> 'Source':
-    with open(path) as f:
-        return Source(f.read(), name=f.name, line_ending=line_ending)
-
 class Source:
     """Represents an single logical unit of source code, e.g. the contents of a source file.
     """
@@ -483,10 +479,14 @@ class Metrics:
         return self.get_offset(LineCol(line, self._linecol_counts[line]))
 
     def valid_linecol(self, linecol: LineCol) -> bool:
+        """Return True if `linecol` represents a valid LineCol object in the parent Source."""
+
         line,col = linecol
         return line in self._linecol_counts and 0 < col <= self._linecol_counts[line]
 
     def valid_offset(self, offset: int) -> bool:
+        """Return True if `offset` is a valid character offset in the parent Source."""
+
         return 0 <= offset <= len(self.source)
 
     def valid_line(self, line: int) -> bool:
@@ -494,6 +494,12 @@ class Metrics:
 
         return 1 <= line <= self.line_count()
 
+    def col_count(self, line: int) -> int:
+        """Return the number of columns of the given line number `line` in the parent Source."""
+
+        return self._linecol_counts[line]
+
+    @property
     def line_count(self) -> int:
         """Return the number of lines in the parent Source."""
 
