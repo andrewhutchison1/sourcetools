@@ -492,7 +492,7 @@ class Metrics:
     def valid_line(self, line: int) -> bool:
         """Return True if the line number `line` is valid."""
 
-        return 1 <= line <= self.line_count()
+        return 1 <= line <= self.line_count
 
     def col_count(self, line: int) -> int:
         """Return the number of columns of the given line number `line` in the parent Source."""
