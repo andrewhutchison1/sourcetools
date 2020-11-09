@@ -22,19 +22,19 @@ class Annotation:
         self._full_lines = range_.full_lines()
 
     @property
-    def range(self):
+    def range(self) -> Range:
         return self._range
 
     @property
-    def message(self):
+    def message(self) -> str:
         return self._msg
 
     @property
-    def kind(self):
+    def kind(self) -> AnnotationKind:
         return self._kind
 
     @property
-    def full_lines(self):
+    def full_lines(self) -> Range:
         return self._full_lines
 
 class Diagnostic:
@@ -80,11 +80,11 @@ class Diagnostic:
         return self
 
     @property
-    def top(self):
+    def top(self) -> Annotation:
         return self._top
 
     @property
-    def root_cause(self):
+    def root_cause(self) -> Annotation:
         """Return the Annotation that ultimately caused this problem this diagnostic represents.
 
         If there are no causal annotations, then the top-level annotation is returned.
@@ -93,5 +93,5 @@ class Diagnostic:
         return self._rest[-1] if len(self._rest) > 0 else self.top
 
     @property
-    def kind(self):
+    def kind(self) -> AnnotationKind:
         return self._top.kind
