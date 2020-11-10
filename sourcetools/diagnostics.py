@@ -1,97 +1,70 @@
 from enum import Enum, auto
-from typing import Iterator
+from typing import Optional
 
 from .source import Range
 
 class AnnotationKind(Enum):
     NOTE = auto()
+    HINT = auto()
     WARN = auto()
     ERROR = auto()
     FATAL = auto()
 
 class Annotation:
-    """An Annotation is a source.Range that is annotated with a string message, and has an
-    AnnotationKind attached to it. This class models what could be called an error message,
-    compiler error or compiler warning.
+    """Models an atomic piece of information of interest that is optionally attached
+    to a single Range.
     """
 
-    def __init__(self, range_: Range, msg: str, kind: AnnotationKind):
+    def __init__(self, range_: Optional[Range], message: str, kind: AnnotationKind):
+        """Intitialise the Annotation with an optional Range, a mandatory descriptive
+        message summarising the annotation, and an AnnotationKind representing its
+        severity.
+        """
         self._range = range_
-        self._msg = msg
+        self._message = message
         self._kind = kind
-        self._full_lines = range_.full_lines()
 
     @property
-    def range(self) -> Range:
+    def range(self) -> Optional[Range]:
         return self._range
 
     @property
     def message(self) -> str:
-        return self._msg
+        return self._message
 
     @property
     def kind(self) -> AnnotationKind:
         return self._kind
 
-    @property
-    def full_lines(self) -> Range:
-        return self._full_lines
-
 class Diagnostic:
-    """A Diagnostic models a single logical 'problem' in source code that consists of a list of
-    one or more causally-related Annotations.
+    """Models a source code diagnostic that may be presented to the user.
 
-    A Diagnostic consists of a top-level annotation that represents a symptomatic problem in
-    source code. The diagnostic can optionally contain one or more annotations that reflect
-    a causal chain of problems, with the deepest such annotation representing a root cause,
-    similar to a stack trace.
+    A Diagnostic models a single logical problem in a piece of source code.
+    It is composed of a sequence of one or more Annotations, each of which
+    provide information about the cause of the problem (which may manifest in
+    other parts of a source file). In this way a Diagnostic is similar to a stack trace,
+    in that the first Annotation stored in a Diagnostic models an effect (e.g. an error),
+    and the subsequence Annotations stored in the Diagnostic model causes.
     """
 
-    def __init__(self, top: Annotation):
-        """Initialise the Diagnostic with a top-level Annotation.
-
-        The top-level annotation represents the problem in source code that occurred at the top
-        level. The diagnostic also has an AnnotationKind, which is taken from the `kind`
-        property of the top-level annotation.
-        """
-
-        self._top = top
-        self._rest = []
-
-    def __len__(self) -> int:
-        """Return the total number of annotations represented in this Diagnostic, including
-        the top-level annotation.
-        """
-
-        return 1 + len(self._rest)
+    def __init__(self, topmost: Annotation):
+        self._topmost = topmost
+        self._causes = []
 
     def __iter__(self) -> Iterator[Annotation]:
-        """Yields each annotation represented in this diagnostic, in the order of effect to
-        cause.
+        yield self._topmost
+        yield from self._causes
+
+    def first(self) -> Annotation:
+        """Return the first Annotation of this Diagnostic."""
+
+        return self._topmost
+
+    def last(self) -> Annotation:
+        """Return the last Annotation of this Diagnostic.
+
+        If the Diagnostic does not have any causal Annotation, then the first diagnostic
+        is returned.
         """
 
-        yield self._top
-        yield from self._rest
-
-    def add_cause(self, cause: Annotation) -> 'Diagnostic':
-        """Add a causal Annotation to this Diagnostic and return self for chaining."""
-
-        self._rest.append(cause)
-        return self
-
-    @property
-    def top(self) -> Annotation:
-        return self._top
-
-    @property
-    def root_cause(self) -> Annotation:
-        """Return the Annotation that ultimately caused this problem this diagnostic represents.
-
-        If there are no causal annotations, then the top-level annotation is returned.
-        """
-
-        return self._rest[-1] if len(self._rest) > 0 else self.top
-
-    @property
-    def kind(self) -> AnnotationKind:
-        return self._top.kind
+        return self._causes[-1] if len(self._causes) > 0 else self._topmost
