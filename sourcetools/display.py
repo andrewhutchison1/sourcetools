@@ -61,15 +61,20 @@ class Printer:
         if opts.newline_after_header:
             builder += ''
 
-        if opts.show_source:
+        if opts.show_source and annotation.range is not None:
             builder += self.print_source(annotation)
 
         return str(builder)
 
     def print_header(self, annotation: Annotation) -> str:
         builder = StringBuilder(' ')
-        builder += annotation.kind.name
-        builder += f'({annotation.range}):'
+
+        if annotation.range is not None:
+            builder += annotation.kind.name
+            builder += f'({annotation.range}):'
+        else:
+            builder += f'{annotation.kind.name}:'
+
         builder += annotation.message
         return str(builder)
 
