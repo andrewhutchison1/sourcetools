@@ -321,15 +321,18 @@ class Range:
         end = f'{self.locations.end.linecol.line}:{self.locations.end.linecol.col}'
         return f'{self.source.name} {begin}-{end}'
 
-    def full_lines(self) -> 'Range':
+    def full_lines(self, /, begin=None, end=None) -> 'Range':
         """Return a Range that is a (not necessarily strict) superset of this Range that
         contains only complete logical source lines.
         """
 
+        begin = begin if begin is not None else self.locations.begin.line
+        end = end if end is not None else self.locations.end.line
+
         return Range(
                 self.source,
-                self.source.metrics.get_line_start_offset(self.locations.begin.line),
-                self.source.metrics.get_line_end_offset(self.locations.end.line))
+                self.source.metrics.get_line_start_offset(begin),
+                self.source.metrics.get_line_end_offset(end))
 
     def each_line(self) -> Iterator['Line']:
         """Return an iterator that yields each logical source line of this Range.
