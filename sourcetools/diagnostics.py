@@ -55,6 +55,12 @@ class Diagnostic:
         yield self._topmost
         yield from self._causes
 
+    def add_cause(self, cause: Annotation) -> 'Diagnostic':
+        """Add a cause Annotation to this Diagnostic and return self for chaining."""
+
+        self._causes.append(cause)
+        return self
+
     def first(self) -> Annotation:
         """Return the first Annotation of this Diagnostic."""
 
