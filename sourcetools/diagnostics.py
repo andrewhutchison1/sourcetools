@@ -1,5 +1,5 @@
 from enum import Enum, auto
-from typing import Optional
+from typing import Optional, Iterator
 
 from .source import Range
 
