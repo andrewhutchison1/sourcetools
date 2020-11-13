@@ -36,3 +36,20 @@ def lower_bound_index(sequence, value):
     """
     index = bisect_left(sequence, value)
     return index - 1 if index != 0 else 0
+
+class StringBuilder:
+    def __init__(self, join_with=''):
+        self._join_with = join_with
+        self._parts = []
+
+    def __iadd__(self, what: str) -> 'StringBuilder':
+        self._parts.append(what)
+        return self
+
+    def __str__(self) -> str:
+        return self._join_with.join(self._parts)
+
+    def reset(self) -> 'StringBuilder':
+        self._parts.clear()
+        return self
+

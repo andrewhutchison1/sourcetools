@@ -7,22 +7,7 @@ from typing import Dict, Optional, Union
 
 from .diagnostics import Annotation, AnnotationKind, Diagnostic
 from .source import Range, Line
-
-class StringBuilder:
-    def __init__(self, join_with=''):
-        self._join_with = join_with
-        self._parts = []
-
-    def __iadd__(self, what: str) -> 'StringBuilder':
-        self._parts.append(what)
-        return self
-
-    def __str__(self) -> str:
-        return self._join_with.join(self._parts)
-
-    def reset(self) -> 'StringBuilder':
-        self._parts.clear()
-        return self
+from .utility import StringBuilder
 
 @dataclass
 class PrintOpts:
